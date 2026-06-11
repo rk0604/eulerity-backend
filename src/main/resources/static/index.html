@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Manager</title>
+  <style>
+    /* Force a light theme regardless of the OS/browser dark-mode setting. */
+    :root { color-scheme: light; }
+    html { background: #ffffff; }
+    body { font-family: sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem;
+           background: #ffffff; color: #1a1a1a; }
+    h1 { margin-bottom: 0.25rem; color: #1a1a1a; }
+    h2 { margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem; color: #1a1a1a; }
+    form { display: grid; gap: 0.5rem; max-width: 420px; }
+    label { display: flex; flex-direction: column; font-size: 0.85rem; color: #333; }
+    input, select, textarea {
+      padding: 0.4rem; font-size: 0.9rem; background: #ffffff; color: #1a1a1a;
+      border: 1px solid #bbb; border-radius: 3px;
+    }
+    button {
+      padding: 0.4rem 0.6rem; font-size: 0.9rem; cursor: pointer;
+      background: #f0f0f0; color: #1a1a1a; border: 1px solid #bbb; border-radius: 3px;
+    }
+    button:hover { background: #e4e4e4; }
+    ul { list-style: none; padding: 0; }
+    li { border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem; margin-bottom: 0.75rem;
+         background: #ffffff; }
+    .task-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .meta { font-size: 0.8rem; color: #666; margin-top: 0.25rem; }
+    .badge { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 3px; background: #eee;
+             color: #333; margin-right: 0.3rem; }
+    pre { background: #f6f6f6; border: 1px solid #ddd; padding: 0.5rem; overflow-x: auto;
+          font-size: 0.8rem; margin-top: 0.5rem; color: #1a1a1a; }
+    .error { color: #b00000; }
+    .muted { color: #777; }
+  </style>
+</head>
+<body>
+  <h1>Task Manager</h1>
+  <p class="muted">Vanilla front-end for the eulerity-backend REST API.</p>
+
+  <h2>Create a task</h2>
+  <form id="create-form">
+    <label>Title *
+      <input type="text" id="title" required>
+    </label>
+    <label>Description
+      <input type="text" id="description">
+    </label>
+    <label>Due date
+      <input type="date" id="dueDate">
+    </label>
+    <label>Priority
+      <select id="priority">
+        <option value="">(default: MEDIUM)</option>
+        <option>LOW</option>
+        <option>MEDIUM</option>
+        <option>HIGH</option>
+      </select>
+    </label>
+    <label>Status
+      <select id="status">
+        <option value="">(default: TODO)</option>
+        <option>TODO</option>
+        <option>IN_PROGRESS</option>
+        <option>DONE</option>
+      </select>
+    </label>
+    <button type="submit">Create task</button>
+  </form>
+  <p id="create-msg"></p>
+
+  <h2>Tasks <button type="button" id="refresh-btn">Refresh</button></h2>
+  <ul id="task-list"></ul>
+
+  <script>
+    const list = document.getElementById('task-list');
+    const createMsg = document.getElementById('create-msg');
+
+    // Escape text so task content can't inject markup.
+    function esc(value) {
+      if (value === null || value === undefined) return '';
+      return String(value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Read a JSON body whether the response was a success or a structured error.
+    async function readJson(res) {
+      const text = await res.text();
+      try { return text ? JSON.parse(text) : null; } catch (e) { return text; }
+    }
+
+    async function loadTasks() {
+      list.innerHTML = '<li class="muted">Loading…</li>';
+      try {
+        const res = await fetch('/tasks');
+        const tasks = await readJson(res);
+        if (!res.ok) throw new Error('GET /tasks failed: ' + res.status);
+        renderTasks(tasks);
+      } catch (err) {
+        list.innerHTML = '<li class="error">' + esc(err.message) + '</li>';
+      }
+    }
+
+    function renderTasks(tasks) {
+      if (!tasks || tasks.length === 0) {
+        list.innerHTML = '<li class="muted">No tasks yet.</li>';
+        return;
+      }
+      list.innerHTML = '';
+      tasks.forEach(function (t) {
+        const li = document.createElement('li');
+        li.innerHTML =
+          '<div class="task-head">' +
+            '<strong>#' + esc(t.id) + ' ' + esc(t.title) + '</strong>' +
+            '<button type="button" data-id="' + esc(t.id) + '">AI breakdown</button>' +
+          '</div>' +
+          (t.description ? '<div>' + esc(t.description) + '</div>' : '') +
+          '<div class="meta">' +
+            '<span class="badge">' + esc(t.priority) + '</span>' +
+            '<span class="badge">' + esc(t.status) + '</span>' +
+            (t.dueDate ? 'due ' + esc(t.dueDate) : '') +
+          '</div>' +
+          '<div class="breakdown"></div>';
+
+        li.querySelector('button').addEventListener('click', function () {
+          breakdown(t.id, li.querySelector('.breakdown'), this);
+        });
+        list.appendChild(li);
+      });
+    }
+
+    async function breakdown(id, target, btn) {
+      btn.disabled = true;
+      target.innerHTML = '<span class="muted">Asking Claude…</span>';
+      try {
+        const res = await fetch('/tasks/' + id + '/breakdown', { method: 'POST' });
+        const body = await readJson(res);
+        // Show the returned JSON either way (success payload or structured error).
+        const cls = res.ok ? '' : ' class="error"';
+        target.innerHTML =
+          '<div' + cls + '>HTTP ' + res.status + '</div>' +
+          '<pre>' + esc(JSON.stringify(body, null, 2)) + '</pre>';
+      } catch (err) {
+        target.innerHTML = '<div class="error">' + esc(err.message) + '</div>';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('create-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      createMsg.textContent = '';
+      const payload = { title: document.getElementById('title').value };
+      const description = document.getElementById('description').value;
+      const dueDate = document.getElementById('dueDate').value;
+      const priority = document.getElementById('priority').value;
+      const status = document.getElementById('status').value;
+      if (description) payload.description = description;
+      if (dueDate) payload.dueDate = dueDate;
+      if (priority) payload.priority = priority;
+      if (status) payload.status = status;
+
+      try {
+        const res = await fetch('/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const body = await readJson(res);
+        if (!res.ok) {
+          const detail = body && body.fieldErrors
+            ? JSON.stringify(body.fieldErrors)
+            : (body && body.message) || ('HTTP ' + res.status);
+          createMsg.innerHTML = '<span class="error">Error: ' + esc(detail) + '</span>';
+          return;
+        }
+        createMsg.innerHTML = '<span class="muted">Created task #' + esc(body.id) + '.</span>';
+        e.target.reset();
+        loadTasks();
+      } catch (err) {
+        createMsg.innerHTML = '<span class="error">' + esc(err.message) + '</span>';
+      }
+    });
+
+    document.getElementById('refresh-btn').addEventListener('click', loadTasks);
+
+    // Initial load.
+    loadTasks();
+  </script>
+</body>
+</html>
