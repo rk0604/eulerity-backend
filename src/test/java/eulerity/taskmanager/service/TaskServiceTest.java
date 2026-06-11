@@ -7,6 +7,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import eulerity.taskmanager.ai.GeneratedSubtask;
+import eulerity.taskmanager.ai.TaskBreakdownGenerator;
+import eulerity.taskmanager.dto.TaskBreakdownResponse;
 import eulerity.taskmanager.dto.TaskRequest;
 import eulerity.taskmanager.dto.TaskResponse;
 import eulerity.taskmanager.enums.Priority;
@@ -37,6 +40,9 @@ class TaskServiceTest {
 
     @Mock
     private TaskMapper taskMapper;
+
+    @Mock
+    private TaskBreakdownGenerator breakdownGenerator;
 
     @InjectMocks
     private TaskService taskService;
@@ -154,5 +160,32 @@ class TaskServiceTest {
         assertThatThrownBy(() -> taskService.deleteTask(3L))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(taskRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void breakdownTask_returnsMappedSubtasks_whenFound() {
+        Task task = Task.builder().id(8L).title("Plan launch").description("Q3 release").build();
+        when(taskRepository.findById(8L)).thenReturn(Optional.of(task));
+        when(breakdownGenerator.generate("Plan launch", "Q3 release"))
+                .thenReturn(List.of(
+                        new GeneratedSubtask("Draft timeline", "Lay out milestones"),
+                        new GeneratedSubtask("Assign owners", "Map tasks to people")));
+
+        TaskBreakdownResponse result = taskService.breakdownTask(8L);
+
+        assertThat(result.getTaskId()).isEqualTo(8L);
+        assertThat(result.getTitle()).isEqualTo("Plan launch");
+        assertThat(result.getSubtasks()).hasSize(2);
+        assertThat(result.getSubtasks().get(0).getTitle()).isEqualTo("Draft timeline");
+        assertThat(result.getSubtasks().get(1).getDescription()).isEqualTo("Map tasks to people");
+    }
+
+    @Test
+    void breakdownTask_throws_whenMissing_andDoesNotCallAi() {
+        when(taskRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taskService.breakdownTask(404L))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(breakdownGenerator, never()).generate(any(), any());
     }
 }

@@ -1,5 +1,6 @@
 package eulerity.taskmanager.controller;
 
+import eulerity.taskmanager.dto.TaskBreakdownResponse;
 import eulerity.taskmanager.dto.TaskRequest;
 import eulerity.taskmanager.dto.TaskResponse;
 import eulerity.taskmanager.service.TaskService;
@@ -70,5 +71,14 @@ public class TaskController {
     public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
         taskService.deleteTask(id);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
+    /**
+     * AI-powered breakdown of a task into suggested subtasks (stateless — nothing
+     * is saved). 404 if the task is absent; 503 if the AI provider isn't configured.
+     */
+    @PostMapping("/{id}/breakdown")
+    public ResponseEntity<TaskBreakdownResponse> breakdownTask(@PathVariable Long id) {
+        return ResponseEntity.ok(taskService.breakdownTask(id));
     }
 }

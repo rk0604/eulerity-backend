@@ -54,6 +54,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Anthropic Java SDK (Claude) for AI-powered task breakdown -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>2.34.0</version>
+        </dependency>
+
         <!-- Lombok: @Builder, @Getter/@Setter, @Data, etc. -->
         <dependency>
             <groupId>org.projectlombok</groupId>

@@ -1,5 +1,9 @@
 package eulerity.taskmanager.service;
 
+import eulerity.taskmanager.ai.GeneratedSubtask;
+import eulerity.taskmanager.ai.TaskBreakdownGenerator;
+import eulerity.taskmanager.dto.SubtaskResponse;
+import eulerity.taskmanager.dto.TaskBreakdownResponse;
 import eulerity.taskmanager.dto.TaskRequest;
 import eulerity.taskmanager.dto.TaskResponse;
 import eulerity.taskmanager.enums.Priority;
@@ -22,10 +26,13 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final TaskMapper taskMapper;
+    private final TaskBreakdownGenerator breakdownGenerator;
 
-    public TaskService(TaskRepository taskRepository, TaskMapper taskMapper) {
+    public TaskService(TaskRepository taskRepository, TaskMapper taskMapper,
+                       TaskBreakdownGenerator breakdownGenerator) {
         this.taskRepository = taskRepository;
         this.taskMapper = taskMapper;
+        this.breakdownGenerator = breakdownGenerator;
     }
 
     /** Create a task, applying sensible defaults when priority/status are omitted. */
@@ -66,6 +73,28 @@ public class TaskService {
             throw new ResourceNotFoundException("Task not found with id: " + id);
         }
         taskRepository.deleteById(id);
+    }
+
+    /**
+     * Break a task into AI-suggested subtasks. Stateless: the suggestions are
+     * returned to the caller and never persisted.
+     */
+    @Transactional(readOnly = true)
+    public TaskBreakdownResponse breakdownTask(Long id) {
+        Task task = findTaskOrThrow(id);
+        List<GeneratedSubtask> generated =
+                breakdownGenerator.generate(task.getTitle(), task.getDescription());
+        List<SubtaskResponse> subtasks = generated.stream()
+                .map(s -> SubtaskResponse.builder()
+                        .title(s.title())
+                        .description(s.description())
+                        .build())
+                .toList();
+        return TaskBreakdownResponse.builder()
+                .taskId(task.getId())
+                .title(task.getTitle())
+                .subtasks(subtasks)
+                .build();
     }
 
     // --- helpers ---
